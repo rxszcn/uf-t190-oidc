@@ -6,8 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestCodeChallengeMethod_IsSupported(t *testing.T) {
-	tests := []struct {
+func TestCodeChallengeMethod_IsSupported(t *testing.T) {	tests := []struct {
 		name   string
 		method CodeChallengeMethod
 		want   bool
@@ -21,6 +20,25 @@ func TestCodeChallengeMethod_IsSupported(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equal(t, tt.want, tt.method.IsSupported())
+		})
+	}
+}
+
+func TestCodeChallengeMethod_OrDefault(t *testing.T) {
+	tests := []struct {
+		name   string
+		method CodeChallengeMethod
+		want   CodeChallengeMethod
+	}{
+		// RFC 7636, section 4.3: an omitted method means plain.
+		{name: "empty defaults to plain", method: "", want: CodeChallengeMethodPlain},
+		{name: "plain stays plain", method: CodeChallengeMethodPlain, want: CodeChallengeMethodPlain},
+		{name: "S256 stays S256", method: CodeChallengeMethodS256, want: CodeChallengeMethodS256},
+		{name: "unsupported stays untouched", method: "S512", want: "S512"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.method.OrDefault())
 		})
 	}
 }

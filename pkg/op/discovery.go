@@ -235,6 +235,12 @@ func SupportedClaims(c Configuration) []string {
 }
 
 func CodeChallengeMethods(c Configuration) []oidc.CodeChallengeMethod {
+	// A configuration restricting the accepted PKCE methods advertises
+	// exactly that set, so the metadata matches what the authorization
+	// endpoint accepts.
+	if methods := codeChallengeMethods(c); len(methods) > 0 {
+		return methods
+	}
 	codeMethods := make([]oidc.CodeChallengeMethod, 0, 1)
 	if c.CodeMethodS256Supported() {
 		codeMethods = append(codeMethods, oidc.CodeChallengeMethodS256)

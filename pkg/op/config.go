@@ -9,6 +9,8 @@ import (
 
 	"github.com/muhlemmer/httpforwarded"
 	"golang.org/x/text/language"
+
+	"github.com/zitadel/oidc/v3/pkg/oidc"
 )
 
 var (
@@ -56,6 +58,30 @@ type Configuration interface {
 }
 
 type IssuerFromRequest func(r *http.Request) string
+
+// CodeChallengeMethodsConfigurer is an optional extension of [Configuration].
+// A Configuration that implements it restricts the PKCE code challenge
+// methods the provider accepts at the authorization endpoint to the same
+// set the discovery metadata advertises, keeping the two consistent.
+// It is a separate interface rather than a method on [Configuration] so
+// that existing implementations of that interface remain source compatible.
+type CodeChallengeMethodsConfigurer interface {
+	// CodeChallengeMethodsSupported returns the PKCE code_challenge_method
+	// values the operator configured. A nil or empty slice means
+	// unrestricted: the legacy behavior applies, accepting plain and S256
+	// and advertising S256 only per CodeMethodS256Supported.
+	CodeChallengeMethodsSupported() []oidc.CodeChallengeMethod
+}
+
+// codeChallengeMethods returns the PKCE code challenge methods c is
+// configured to accept, or nil when c does not restrict them.
+func codeChallengeMethods(c any) []oidc.CodeChallengeMethod {
+	configurer, ok := c.(CodeChallengeMethodsConfigurer)
+	if !ok {
+		return nil
+	}
+	return configurer.CodeChallengeMethodsSupported()
+}
 
 func IssuerFromHost(path string) func(bool) (IssuerFromRequest, error) {
 	return issuerFromForwardedOrHost(path, new(issuerConfig))

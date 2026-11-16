@@ -1,6 +1,7 @@
 package op_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -188,6 +189,93 @@ func TestAuthorizeRequestObjectNotSupportedParity(t *testing.T) {
 			query.Set("request", "not.a.request.object")
 
 			assertDelivered(t, getAuthorize(t, provider, path.handler, query), "request_not_supported")
+		})
+	}
+}
+
+// TestAuthorizeCodeChallengeMethodConfiguredParity configures the provider to
+// accept only S256 (RFC 9700 recommends dropping plain) and holds both
+// dispatch paths, and the discovery metadata they serve, to that
+// configuration: plain and the omitted method (defaulting to plain per
+// RFC 7636, section 4.3) are refused, S256 still works, and the metadata
+// advertises exactly the accepted set.
+func TestAuthorizeCodeChallengeMethodConfiguredParity(t *testing.T) {
+	storage.RegisterClients(storage.NativeClient(parityClientID, parityRedirectURI))
+
+	config := *testConfig
+	config.CodeChallengeMethods = []oidc.CodeChallengeMethod{oidc.CodeChallengeMethodS256}
+	provider := newTestProvider(&config)
+
+	s256Challenge := oidc.NewSHACodeChallenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")
+
+	tests := []struct {
+		name   string
+		break_ func(url.Values)
+		// wantError is the error code expected at the client's redirect_uri.
+		// Empty means the request must be accepted and redirected to login.
+		wantError string
+	}{
+		{
+			name: "plain is refused",
+			break_: func(q url.Values) {
+				q.Set("code_challenge", "challenge")
+				q.Set("code_challenge_method", string(oidc.CodeChallengeMethodPlain))
+			},
+			wantError: "invalid_request",
+		},
+		{
+			// RFC 7636, section 4.3, defaults an omitted method to plain,
+			// which the configuration does not accept.
+			name: "omitted method is refused as plain",
+			break_: func(q url.Values) {
+				q.Set("code_challenge", "challenge")
+			},
+			wantError: "invalid_request",
+		},
+		{
+			name: "S256 is accepted",
+			break_: func(q url.Values) {
+				q.Set("code_challenge", s256Challenge)
+				q.Set("code_challenge_method", string(oidc.CodeChallengeMethodS256))
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, path := range authorizePaths(provider) {
+				t.Run(path.name, func(t *testing.T) {
+					query := parityQuery()
+					tt.break_(query)
+					rec := getAuthorize(t, provider, path.handler, query)
+
+					if tt.wantError != "" {
+						params := assertDelivered(t, rec, tt.wantError)
+						assert.NotEmpty(t, params.Get("error_description"))
+						return
+					}
+					// Accepted: redirected to the login UI with an auth
+					// request ID, so the S256 flow is not regressed.
+					require.Equal(t, http.StatusFound, rec.Code)
+					assert.Contains(t, rec.Header().Get("Location"), "/login/username?authRequestID=")
+				})
+			}
+		})
+	}
+
+	// The discovery metadata of both paths must advertise exactly the
+	// configured set, so a client deciding by the metadata is not misled.
+	for _, path := range authorizePaths(provider) {
+		t.Run("discovery/"+path.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			path.handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, testIssuer+oidc.DiscoveryEndpoint[1:], nil))
+			require.Equal(t, http.StatusOK, rec.Code)
+
+			var discovery struct {
+				CodeChallengeMethodsSupported []oidc.CodeChallengeMethod `json:"code_challenge_methods_supported"`
+			}
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &discovery))
+			assert.Equal(t, []oidc.CodeChallengeMethod{oidc.CodeChallengeMethodS256},
+				discovery.CodeChallengeMethodsSupported)
 		})
 	}
 }

@@ -487,8 +487,21 @@ func TestWithCustomEndpoints(t *testing.T) {
 }
 
 // A customisation must not reach the global or a sibling provider that never asked for it.
-func TestNewProviderDoesNotMutateDefaultEndpoints(t *testing.T) {
-	defaultsBefore := *op.DefaultEndpoints
+// TestNewProviderRejectsUnsupportedCodeChallengeMethod covers that a
+// configured PKCE method VerifyCodeChallenge cannot verify fails at
+// startup, instead of being advertised while no request can use it.
+func TestNewProviderRejectsUnsupportedCodeChallengeMethod(t *testing.T) {
+	config := *testConfig
+	config.CodeChallengeMethods = []oidc.CodeChallengeMethod{"S512"}
+
+	_, err := op.NewOpenIDProvider(testIssuer, &config,
+		storage.NewStorage(storage.NewUserStore(testIssuer)),
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "code_challenge_method")
+}
+
+func TestNewProviderDoesNotMutateDefaultEndpoints(t *testing.T) {	defaultsBefore := *op.DefaultEndpoints
 
 	customAuth := op.NewEndpoint("/custom/authorize")
 	_, err := op.NewOpenIDProvider(testIssuer, testConfig,

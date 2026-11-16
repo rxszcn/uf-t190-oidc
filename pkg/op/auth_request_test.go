@@ -987,6 +987,53 @@ func TestValidateAuthReqCodeChallengeMethod(t *testing.T) {
 	}
 }
 
+// TestValidateAuthReqCodeChallengeMethodSupported covers the
+// operator-configured restriction on top of
+// ValidateAuthReqCodeChallengeMethod: the empty method defaults to plain
+// (RFC 7636, section 4.3) and is accepted only if plain is configured.
+func TestValidateAuthReqCodeChallengeMethodSupported(t *testing.T) {
+	s256Only := []oidc.CodeChallengeMethod{oidc.CodeChallengeMethodS256}
+	plainOnly := []oidc.CodeChallengeMethod{oidc.CodeChallengeMethodPlain}
+	tests := []struct {
+		name      string
+		challenge string
+		method    oidc.CodeChallengeMethod
+		supported []oidc.CodeChallengeMethod
+		wantErr   bool
+	}{
+		{name: "unrestricted accepts plain", challenge: "challenge", method: oidc.CodeChallengeMethodPlain},
+		{name: "unrestricted accepts empty method", challenge: "challenge", method: ""},
+		{name: "unrestricted accepts S256", challenge: "challenge", method: oidc.CodeChallengeMethodS256},
+		{name: "unrestricted still rejects unknown method", challenge: "challenge", method: "S512", wantErr: true},
+
+		{name: "S256 only accepts S256", challenge: "challenge", method: oidc.CodeChallengeMethodS256, supported: s256Only},
+		{name: "S256 only rejects plain", challenge: "challenge", method: oidc.CodeChallengeMethodPlain, supported: s256Only, wantErr: true},
+		{name: "S256 only rejects empty method as plain", challenge: "challenge", method: "", supported: s256Only, wantErr: true},
+
+		{name: "plain only accepts plain", challenge: "challenge", method: oidc.CodeChallengeMethodPlain, supported: plainOnly},
+		{name: "plain only accepts empty method as plain", challenge: "challenge", method: "", supported: plainOnly},
+		{name: "plain only rejects S256", challenge: "challenge", method: oidc.CodeChallengeMethodS256, supported: plainOnly, wantErr: true},
+
+		// Without a code_challenge there is nothing to downgrade.
+		{name: "no challenge skips the restriction", method: oidc.CodeChallengeMethodPlain, supported: s256Only},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := op.ValidateAuthReqCodeChallengeMethodSupported(tt.challenge, tt.method, tt.supported)
+			if !tt.wantErr {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorIs(t, err, oidc.ErrInvalidRequest())
+			var oidcErr *oidc.Error
+			require.ErrorAs(t, err, &oidcErr)
+			if tt.method != "" {
+				assert.NotContains(t, oidcErr.Description, string(tt.method))
+			}
+		})
+	}
+}
+
 // TestValidateAuthRequestClientCodeChallengeMethod covers the check in
 // ValidateAuthRequestClient itself, without the backstop in Authorize.
 func TestValidateAuthRequestClientCodeChallengeMethod(t *testing.T) {

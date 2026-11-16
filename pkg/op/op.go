@@ -174,6 +174,15 @@ type Config struct {
 	CryptoKeyId                       string
 	DefaultLogoutRedirectURI          string
 	CodeMethodS256                    bool
+	// CodeChallengeMethods restricts the PKCE code_challenge_method values
+	// the authorization endpoint accepts and the discovery metadata
+	// advertises, so clients deciding by the metadata are not misled.
+	// An empty code_challenge_method defaults to plain (RFC 7636,
+	// section 4.3) and is accepted only if plain is listed here.
+	// Only plain and S256 are valid entries; NewProvider rejects others.
+	// If empty, the legacy behavior applies: plain and S256 are accepted
+	// and S256 is advertised only when CodeMethodS256 is set.
+	CodeChallengeMethods              []oidc.CodeChallengeMethod
 	AuthMethodPost                    bool
 	AuthMethodPrivateKeyJWT           bool
 	GrantTypeRefreshToken             bool
@@ -271,6 +280,13 @@ func NewProvider(
 	issuer func(insecure bool) (IssuerFromRequest, error),
 	opOpts ...Option,
 ) (_ *Provider, err error) {
+	// Reject methods VerifyCodeChallenge cannot verify, so a misconfiguration
+	// fails at startup instead of advertising a method no request can use.
+	for _, method := range config.CodeChallengeMethods {
+		if !method.IsSupported() {
+			return nil, fmt.Errorf("unsupported code_challenge_method %q in Config.CodeChallengeMethods", string(method))
+		}
+	}
 	keySet := &OpenIDKeySet{storage}
 	easgcmCrypto := NewAES256GCMCrypto(config.CryptoKey, config.CryptoKeyId)
 	crypto := NewCompositeCrypto(
@@ -380,6 +396,13 @@ func (o *Provider) AuthMethodPostSupported() bool {
 
 func (o *Provider) CodeMethodS256Supported() bool {
 	return o.config.CodeMethodS256
+}
+
+// CodeChallengeMethodsSupported implements [CodeChallengeMethodsConfigurer],
+// returning the configured restriction on PKCE code challenge methods.
+// A nil or empty slice means the legacy, unrestricted behavior applies.
+func (o *Provider) CodeChallengeMethodsSupported() []oidc.CodeChallengeMethod {
+	return o.config.CodeChallengeMethods
 }
 
 func (o *Provider) AuthMethodPrivateKeyJWTSupported() bool {

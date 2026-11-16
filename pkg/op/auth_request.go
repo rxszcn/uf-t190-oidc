@@ -154,6 +154,20 @@ func Authorize(w http.ResponseWriter, r *http.Request, authorizer Authorizer) {
 			return
 		}
 	}
+	// The operator-configured restriction on code_challenge_method runs
+	// here, after any custom AuthorizeValidator, so it cannot be overridden
+	// and the accepted set stays consistent with the discovery metadata.
+	if methods := codeChallengeMethods(authorizer); len(methods) > 0 {
+		if err := ValidateAuthReqCodeChallengeMethodSupported(authReq.CodeChallenge, authReq.CodeChallengeMethod, methods); err != nil {
+			// As above, a custom validator may not have verified the
+			// redirect_uri, so only redirect the error to a registered one.
+			if !redirectURIRegistered(client, authReq.RedirectURI) {
+				err = oidc.ErrInvalidRequestRedirectURI().WithDescription(codeChallengeMethodNotSupported)
+			}
+			AuthRequestError(w, r, authReq, err, authorizer)
+			return
+		}
+	}
 	req, err := authorizer.Storage().CreateAuthRequest(ctx, authReq, userID)
 	if err != nil {
 		AuthRequestError(w, r, authReq, oidc.DefaultToServerError(err, "unable to save auth request"), authorizer)
@@ -479,6 +493,25 @@ func ValidateAuthReqCodeChallengeMethod(codeChallenge string, method oidc.CodeCh
 		return nil
 	}
 	return oidc.ErrInvalidRequest().WithDescription(codeChallengeMethodNotSupported)
+}
+
+// ValidateAuthReqCodeChallengeMethodSupported validates the passed
+// code_challenge_method (PKCE) against the methods the provider is
+// configured to accept, on top of ValidateAuthReqCodeChallengeMethod.
+// An empty method defaults to plain (RFC 7636, section 4.3) and is accepted
+// only if plain is configured. An empty supported slice imposes no further
+// restriction, preserving the legacy behavior.
+func ValidateAuthReqCodeChallengeMethodSupported(codeChallenge string, method oidc.CodeChallengeMethod, supported []oidc.CodeChallengeMethod) error {
+	if err := ValidateAuthReqCodeChallengeMethod(codeChallenge, method); err != nil {
+		return err
+	}
+	if codeChallenge == "" || len(supported) == 0 {
+		return nil
+	}
+	if !slices.Contains(supported, method.OrDefault()) {
+		return oidc.ErrInvalidRequest().WithDescription(codeChallengeMethodNotSupported)
+	}
+	return nil
 }
 
 // ValidateAuthReqIDTokenHint validates the id_token_hint (if passed as parameter in the request)

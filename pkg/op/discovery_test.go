@@ -623,6 +623,32 @@ func Test_CodeChallengeMethods(t *testing.T) {
 			}()},
 			[]oidc.CodeChallengeMethod{oidc.CodeChallengeMethodS256},
 		},
+		{
+			// The configured restriction is advertised verbatim, so the
+			// metadata matches what the authorization endpoint accepts.
+			"configured S256 only",
+			args{newTestProvider(&op.Config{
+				CodeChallengeMethods: []oidc.CodeChallengeMethod{oidc.CodeChallengeMethodS256},
+			})},
+			[]oidc.CodeChallengeMethod{oidc.CodeChallengeMethodS256},
+		},
+		{
+			"configured plain and S256",
+			args{newTestProvider(&op.Config{
+				CodeChallengeMethods: []oidc.CodeChallengeMethod{
+					oidc.CodeChallengeMethodPlain,
+					oidc.CodeChallengeMethodS256,
+				},
+			})},
+			[]oidc.CodeChallengeMethod{oidc.CodeChallengeMethodPlain, oidc.CodeChallengeMethodS256},
+		},
+		{
+			// Without a configured restriction the legacy advertisement
+			// follows CodeMethodS256, even on a Provider.
+			"unconfigured provider falls back to CodeMethodS256",
+			args{newTestProvider(&op.Config{CodeMethodS256: true})},
+			[]oidc.CodeChallengeMethod{oidc.CodeChallengeMethodS256},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

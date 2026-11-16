@@ -176,6 +176,15 @@ func (s *LegacyServer) Authorize(ctx context.Context, r *ClientRequest[oidc.Auth
 	if r.Data.RequestParam != "" {
 		return nil, oidc.ErrRequestNotSupported()
 	}
+	// Enforce the operator-configured PKCE methods on this dispatch path as
+	// well, so both authorize endpoints accept the same set the discovery
+	// metadata advertises. The redirect_uri was already validated in
+	// authorize, so the refusal may be handed to the client.
+	if methods := codeChallengeMethods(s.provider); len(methods) > 0 {
+		if err := ValidateAuthReqCodeChallengeMethodSupported(r.Data.CodeChallenge, r.Data.CodeChallengeMethod, methods); err != nil {
+			return nil, err
+		}
+	}
 	req, err := s.provider.Storage().CreateAuthRequest(ctx, r.Data, userID)
 	if err != nil {
 		return TryErrorRedirect(ctx, r.Data, oidc.DefaultToServerError(err, "unable to save auth request"), s.provider.Encoder(), nil)

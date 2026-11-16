@@ -25,6 +25,17 @@ func (m CodeChallengeMethod) IsSupported() bool {
 	}
 }
 
+// OrDefault returns the effective method: an empty method defaults to plain,
+// as RFC 7636, section 4.3, prescribes. It is the single place where this
+// default is resolved, so that acceptance checks and capability
+// configuration reason about the same method set.
+func (m CodeChallengeMethod) OrDefault() CodeChallengeMethod {
+	if m == "" {
+		return CodeChallengeMethodPlain
+	}
+	return m
+}
+
 type CodeChallenge struct {
 	Challenge string
 	Method    CodeChallengeMethod
